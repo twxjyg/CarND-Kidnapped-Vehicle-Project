@@ -30,10 +30,10 @@ void ParticleFilter::Init(double x, double y, double theta, double std[]) {
    * NOTE: Consult particle_filter.h for more information about this method
    *   (and others in this file).
    */
-  num_particles = 500;  // TODO: Set the number of particles
-  is_initialized = false;
-  particles_.resize(num_particles);
-  for (unsigned int i = 0; i < num_particles; i++) {
+  num_particles_ = 500;  // TODO: Set the number of particles
+  is_initialized_ = false;
+  particles_.resize(num_particles_);
+  for (unsigned int i = 0; i < num_particles_; i++) {
     auto& p = particles_[i];
     p.id = i;
     const auto& sampled = GaussianSample({x, y, theta}, {std[0], std[1], std[2]});
@@ -42,7 +42,7 @@ void ParticleFilter::Init(double x, double y, double theta, double std[]) {
     p.theta = sampled[2];
     p.weight = 1;
   }
-  is_initialized = true;
+  is_initialized_ = true;
 }
 
 void ParticleFilter::Prediction(double delta_t, double std_pos[], double velocity, double yaw_rate) {
@@ -53,7 +53,7 @@ void ParticleFilter::Prediction(double delta_t, double std_pos[], double velocit
    *  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
    *  http://www.cplusplus.com/reference/random/default_random_engine/
    */
-  for (unsigned int i = 0; i < num_particles; i++) {
+  for (unsigned int i = 0; i < num_particles_; i++) {
     auto& p = particles_[i];
     const auto& new_state = BicyclePredict({p.x, p.y, p.theta}, delta_t, velocity, yaw_rate);
     const auto& sampled = GaussianSample(new_state, {std_pos[0], std_pos[1], std_pos[2]});
@@ -63,7 +63,8 @@ void ParticleFilter::Prediction(double delta_t, double std_pos[], double velocit
   }
 }
 
-void ParticleFilter::DataAssociate(vector<int> predicted_obs_id, const Map& map, vector<Landmark>* observations) {
+void ParticleFilter::DataAssociate(const std::vector<int>& predicted_obs_id, Map& map,
+                                   std::vector<Landmark>* observations) {
   /**
    * TODO: Find the predicted measurement that is closest to each
    *   observed measurement and assign the observed measurement to this
@@ -72,10 +73,23 @@ void ParticleFilter::DataAssociate(vector<int> predicted_obs_id, const Map& map,
    *   probably find it useful to implement this method and use it as a helper
    *   during the UpdateWeights phase.
    */
+  for (auto& obs : *observations) {
+    double min_dis = std::numeric_limits<double>::max();
+    int min_id = -1;
+    for (const auto& pred_obs_id : predicted_obs_id) {
+      const auto& lm = map.landmarks[pred_obs_id];
+      double dis = EuclideanDistance({lm.x, lm.y}, {obs.x, obs.y});
+      if (dis < min_dis) {
+        min_dis = dis;
+        min_id = lm.id;
+      }
+    }
+    obs.id = min_id;
+  }
 }
 
 void ParticleFilter::UpdateWeights(double sensor_range, double std_landmark[], vector<Landmark>& observations,
-                                   const Map& map) {
+                                   Map& map) {
   /**
    * TODO: Update the weights of each particle using a mult-variate Gaussian
    *   distribution. You can read more about this distribution here:
@@ -97,16 +111,20 @@ void ParticleFilter::UpdateWeights(double sensor_range, double std_landmark[], v
     DataAssociate(predicted_obs_id, map, &observations);
     double weight = 1;
     for (const auto& obs : observations) {
-      const auto& ground_truth = map.landmarks[obs.id];
-      const auto& w = multiv_prob(std_landmark[0], std_landmark[1], obs.x, obs.y, ground_truth.x, ground_truth.y);
+      const auto& map_lm = map.landmarks[obs.id];
+      const auto& w = MultivariableProb(std_landmark[0], std_landmark[1], obs.x, obs.y, map_lm.x, map_lm.y);
       weight *= w;
     }
     p.weight = weight;
     total_weight += p.weight;
   }
-  for (unsigned int i = 0; i < particles_.size; i++) {
+  latest_max_weight_ = 0.0;
+  for (unsigned int i = 0; i < particles_.size(); i++) {
     auto& p = particles_[i];
     p.weight = p.weight / total_weight;
+    if (p.weight > latest_max_weight_) {
+      latest_max_weight_ = p.weight;
+    }
   }
 }
 
@@ -117,6 +135,18 @@ void ParticleFilter::Resample() {
    * NOTE: You may find std::discrete_distribution helpful here.
    *   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
    */
+  std::vector<Particle> sampled_particles;
+  int index = static_cast<int>(Random(0.0, 1.0) * static_cast<double>(num_particles_));
+  double beta = 0.0;
+  for (unsigned int i = 0; i < num_particles_; i++) {
+    beta += Random(0.0, 2 * latest_max_weight_);
+    while (beta > particles_[index].weight) {
+      beta -= particles_[index].weight;
+      index = (index + 1) % num_particles_;
+    }
+    sampled_particles.push_back(particles_[index]);
+  }
+  particles_ = sampled_particles;
 }
 
 void ParticleFilter::SetAssociations(Particle& particle, const vector<int>& associations, const vector<double>& sense_x,

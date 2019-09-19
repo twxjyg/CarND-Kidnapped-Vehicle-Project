@@ -65,5 +65,9 @@
         "cfenv": "cpp",
         "cinttypes": "cpp",
         "typeindex": "cpp"
-    }
+    },
+    "cSpell.words": [
+        "multiv",
+        "prob"
+    ]
 }

@@ -13,22 +13,11 @@
 #include <vector>
 #include "helper_functions.h"
 
-struct Particle {
-  int id;
-  double x;
-  double y;
-  double theta;
-  double weight;
-  std::vector<int> associations;
-  std::vector<double> sense_x;
-  std::vector<double> sense_y;
-};
-
 class ParticleFilter {
  public:
   // Constructor
-  // @param num_particles Number of particles
-  ParticleFilter() : num_particles(0), is_initialized(false) {}
+  // @param num_particles_ Number of particles
+  ParticleFilter() : num_particles_(0), is_initialized_(false), latest_max_weight_{0.0} {}
 
   // Destructor
   ~ParticleFilter() {}
@@ -61,7 +50,7 @@ class ParticleFilter {
    * @param predicted Vector of predicted landmark observations
    * @param observations Vector of landmark observations
    */
-void DataAssociate(vector<int> predicted_obs_id, const Map& map_landmarks, vector<Landmark>* observations);
+  void DataAssociate(const std::vector<int>& predicted_obs_id, Map& map, std::vector<Landmark>* observations);
 
   /**
    * UpdateWeights Updates the weights for each particle based on the likelihood
@@ -73,7 +62,7 @@ void DataAssociate(vector<int> predicted_obs_id, const Map& map_landmarks, vecto
    * @param map Map class containing map landmarks
    */
   void UpdateWeights(double sensor_range, double std_landmark[], std::vector<Landmark>& observations,
-                     const Map& map_landmarks);
+                     Map& map_landmarks);
 
   /**
    * Resample Resamples from the updated set of particles to form
@@ -93,7 +82,7 @@ void DataAssociate(vector<int> predicted_obs_id, const Map& map_landmarks, vecto
   /**
    * Initialized Returns whether particle filter is Initialized yet or not.
    */
-  const bool Initialized() const { return is_initialized; }
+  const bool Initialized() const { return is_initialized_; }
 
   /**
    * Used for obtaining debugging information related to particles.
@@ -107,13 +96,12 @@ void DataAssociate(vector<int> predicted_obs_id, const Map& map_landmarks, vecto
   // Set of current particles
   std::vector<Particle> particles_;
   // Number of particles to draw
-  int num_particles;
+  int num_particles_;
 
   // Flag, if filter is initialized
-  bool is_initialized;
+  bool is_initialized_;
 
-  // Vector of weights of all particles
-  std::vector<double> weights;
+  double latest_max_weight_;
 };
 
 #endif  // PARTICLE_FILTER_H_

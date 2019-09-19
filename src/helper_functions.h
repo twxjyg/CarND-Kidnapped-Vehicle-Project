@@ -16,8 +16,8 @@
 #include <random>
 #include <sstream>
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 // for portability of M_PI (Vis Studio, MinGW, etc.)
 #ifndef M_PI
@@ -27,7 +27,7 @@ const double M_PI = 3.14159265358979323846;
 /**
  * Struct representing one position/control measurement.
  */
-struct control_s {
+struct ControlS {
   double velocity;  // Velocity [m/s]
   double yawrate;   // Yaw rate [rad/s]
 };
@@ -35,7 +35,7 @@ struct control_s {
 /**
  * Struct representing one ground truth position.
  */
-struct ground_truth {
+struct GroundTruth {
   double x;      // Global vehicle x position [m]
   double y;      // Global vehicle y position
   double theta;  // Global vehicle yaw [rad]
@@ -50,19 +50,20 @@ struct Landmark {
   double y;  // Local (vehicle coords) y position of landmark observation [m]
 };
 
-class Map {
+struct Map {
   std::unordered_map<int, Landmark> landmarks;
 };
 
-/**
- * Computes the Euclidean distance between two 2D points.
- * @param (x1,y1) x and y coordinates of first point
- * @param (x2,y2) x and y coordinates of second point
- * @output Euclidean distance between two 2D points
- */
-inline double dist(double x1, double y1, double x2, double y2) {
-  return sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
-}
+struct Particle {
+  int id;
+  double x;
+  double y;
+  double theta;
+  double weight;
+  std::vector<int> associations;
+  std::vector<double> sense_x;
+  std::vector<double> sense_y;
+};
 
 /**
  * Computes the error between ground truth and particle filter data.
@@ -70,7 +71,7 @@ inline double dist(double x1, double y1, double x2, double y2) {
  * @param (pf_x, pf_y, pf_theta) x, y and theta of particle filter
  * @output Error between ground truth and particle filter data.
  */
-inline double* getError(double gt_x, double gt_y, double gt_theta, double pf_x, double pf_y, double pf_theta) {
+inline double* GetError(double gt_x, double gt_y, double gt_theta, double pf_x, double pf_y, double pf_theta) {
   static double error[3];
   error[0] = fabs(pf_x - gt_x);
   error[1] = fabs(pf_y - gt_y);
@@ -87,7 +88,7 @@ inline double* getError(double gt_x, double gt_y, double gt_theta, double pf_x, 
  * @param filename Name of file containing map data.
  * @output True if opening and reading file was successful
  */
-inline bool read_map_data(std::string filename, Map& map) {
+inline bool ReadMapData(std::string filename, Map& map) {
   // Get file of map
   std::ifstream in_file_map(filename.c_str(), std::ifstream::in);
   // Return if we can't open the file
@@ -115,11 +116,11 @@ inline bool read_map_data(std::string filename, Map& map) {
     Landmark single_landmark_temp;
 
     // Set values
-    single_landmark_temp.id_i = id_i;
-    single_landmark_temp.x_f = landmark_x_f;
-    single_landmark_temp.y_f = landmark_y_f;
+    single_landmark_temp.id = id_i;
+    single_landmark_temp.x = landmark_x_f;
+    single_landmark_temp.y = landmark_y_f;
 
-    map.landmarks[single_landmark_temp.id_i] = single_landmark_temp;
+    map.landmarks[single_landmark_temp.id] = single_landmark_temp;
   }
   return true;
 }
@@ -129,7 +130,7 @@ inline bool read_map_data(std::string filename, Map& map) {
  * @param filename Name of file containing control measurements.
  * @output True if opening and reading file was successful
  */
-inline bool read_control_data(std::string filename, std::vector<control_s>& position_meas) {
+inline bool ReadControlData(std::string filename, std::vector<ControlS>& position_meas) {
   // Get file of position measurements
   std::ifstream in_file_pos(filename.c_str(), std::ifstream::in);
   // Return if we can't open the file
@@ -148,7 +149,7 @@ inline bool read_control_data(std::string filename, std::vector<control_s>& posi
     double velocity, yawrate;
 
     // Declare single control measurement:
-    control_s meas;
+    ControlS meas;
 
     // read data from line to values:
     iss_pos >> velocity;
@@ -169,7 +170,7 @@ inline bool read_control_data(std::string filename, std::vector<control_s>& posi
  * @param filename Name of file containing ground truth.
  * @output True if opening and reading file was successful
  */
-inline bool read_gt_data(std::string filename, std::vector<ground_truth>& gt) {
+inline bool ReadGroundTruthData(std::string filename, std::vector<GroundTruth>& gt) {
   // Get file of position measurements
   std::ifstream in_file_pos(filename.c_str(), std::ifstream::in);
   // Return if we can't open the file
@@ -188,7 +189,7 @@ inline bool read_gt_data(std::string filename, std::vector<ground_truth>& gt) {
     double x, y, azimuth;
 
     // Declare single ground truth
-    ground_truth single_gt;
+    GroundTruth single_gt;
 
     // read data from line to values
     iss_pos >> x;
@@ -211,7 +212,7 @@ inline bool read_gt_data(std::string filename, std::vector<ground_truth>& gt) {
  * @param filename Name of file containing landmark observation measurements.
  * @output True if opening and reading file was successful
  */
-inline bool read_landmark_data(std::string filename, std::vector<Landmark>& observations) {
+inline bool ReadLandmarkData(std::string filename, std::vector<Landmark>& observations) {
   // Get file of landmark measurements
   std::ifstream in_file_obs(filename.c_str(), std::ifstream::in);
   // Return if we can't open the file
@@ -246,14 +247,22 @@ inline bool read_landmark_data(std::string filename, std::vector<Landmark>& obse
   return true;
 }
 
-static std::shared_ptr<std::default_random_engine> G_random_engine;
+static std::shared_ptr<std::mt19937> G_random_engine = nullptr;
+static std::shared_ptr<std::default_random_engine> G_random_engine_gaussian = nullptr;
 static void InitRandomEngine() {
-  assert(G_random_engine != nullptr);
-  G_random_engine = std::make_shared<std::default_random_engine>(1024);
+  assert(G_random_engine == nullptr);
+  assert(G_random_engine_gaussian == nullptr);
+  G_random_engine = std::make_shared<std::mt19937>(1024);
+  G_random_engine_gaussian = std::make_shared<std::default_random_engine>(1024);
+}
+
+static double Random(double start, double end) {
+  std::uniform_real_distribution<double> dist(start, end);
+  return dist(*G_random_engine);
 }
 
 static std::vector<double> GaussianSample(std::vector<double> mean, std::vector<double> std) {
-  assert(mean.size() != std.size());
+  assert(mean.size() == std.size());
   std::vector<std::normal_distribution<double>> dists;
   for (unsigned int i = 0; i < mean.size(); i++) {
     dists.push_back(std::normal_distribution<double>{mean[i], std[i]});
@@ -261,7 +270,7 @@ static std::vector<double> GaussianSample(std::vector<double> mean, std::vector<
   std::vector<double> sampled;
   sampled.resize(dists.size());
   for (unsigned int i = 0; i < dists.size(); i++) {
-    sampled[i] = dists[i](*G_random_engine);
+    sampled[i] = dists[i](*G_random_engine_gaussian);
   }
   return sampled;
 }
@@ -277,7 +286,35 @@ static std::vector<double> BicyclePredict(std::vector<double> state0, double del
   return {x1, y1, theta0};
 }
 
-static double multiv_prob(double sig_x, double sig_y, double x_obs, double y_obs, double mu_x, double mu_y) {
+static void TransformLandmarksFromLocalToGlobal(const Particle& global_pose, std::vector<Landmark>* local_obs) {
+  for (auto& obs : *local_obs) {
+    double x = global_pose.x + std::cos(global_pose.theta) * obs.x - std::sin(global_pose.theta) * obs.y;
+    double y = global_pose.y + std::sin(global_pose.theta) * obs.x + std::cos(global_pose.theta) * obs.y;
+    obs.x = x;
+    obs.y = y;
+  }
+}
+
+static double EuclideanDistance(const std::vector<double>& p1, const std::vector<double>& p2) {
+  assert(p1.size() != p2.size());
+  double result = 0.0;
+  for (unsigned int i = 0; i < p1.size(); i++) {
+    result += (p1[i] - p2[i]) * (p1[i] - p2[i]);
+  }
+  return std::sqrt(result);
+}
+
+static std::vector<int> QueryMapLandmarks(const Particle& center, double radius, const Map& map) {
+  std::vector<int> result;
+  for (const auto& map_lm : map.landmarks) {
+    if (EuclideanDistance({map_lm.second.x, map_lm.second.y}, {center.x, center.y}) < radius) {
+      result.push_back(map_lm.first);
+    }
+  }
+  return result;
+}
+
+static double MultivariableProb(double sig_x, double sig_y, double x_obs, double y_obs, double mu_x, double mu_y) {
   // calculate normalization term
   double gauss_norm;
   gauss_norm = 1 / (2 * M_PI * sig_x * sig_y);
