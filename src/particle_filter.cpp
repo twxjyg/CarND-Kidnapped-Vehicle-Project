@@ -30,7 +30,7 @@ void ParticleFilter::Init(double x, double y, double theta, double std[]) {
    * NOTE: Consult particle_filter.h for more information about this method
    *   (and others in this file).
    */
-  num_particles_ = 5;  // TODO: Set the number of particles
+  num_particles_ = 50;  // TODO: Set the number of particles
   is_initialized_ = false;
   particles_.resize(num_particles_);
   for (unsigned int i = 0; i < num_particles_; i++) {
@@ -56,7 +56,7 @@ void ParticleFilter::Prediction(double delta_t, double std_pos[], double velocit
   for (unsigned int i = 0; i < num_particles_; i++) {
     auto& p = particles_[i];
     const auto& new_state = BicyclePredict({p.x, p.y, p.theta}, delta_t, velocity, yaw_rate);
-    const auto& sampled = GaussianSample(new_state, {std_pos[0], std_pos[1], std_pos[2]});
+    const auto& sampled = GaussianSample(new_state, {std_pos[0] * 0.8, std_pos[1] * 0.8, std_pos[2] * 0.8});
     p.x = sampled[0];
     p.y = sampled[1];
     p.theta = sampled[2];
@@ -74,8 +74,6 @@ void ParticleFilter::DataAssociate(const std::vector<int>& predicted_obs_id, Map
    *   during the UpdateWeights phase.
    */
   for (auto& obs : *observations) {
-    std::cout << "obs:"
-              << "(" << obs.x << "," << obs.y << ")" << std::endl;
     double min_dis = std::numeric_limits<double>::max();
     int min_id = -1;
     for (const auto& pred_obs_id : predicted_obs_id) {
@@ -86,13 +84,11 @@ void ParticleFilter::DataAssociate(const std::vector<int>& predicted_obs_id, Map
         min_id = lm.id;
       }
     }
-    std::cout << "lm:" << min_id << "(" << map.landmarks[min_id].x << "," << map.landmarks[min_id].y << ")"
-              << std::endl;
     obs.id = min_id;
   }
 }
 
-void ParticleFilter::UpdateWeights(double sensor_range, double std_landmark[], vector<Landmark>& observations,
+void ParticleFilter::UpdateWeights(double sensor_range, double std_landmark[], const vector<Landmark>& observations,
                                    Map& map) {
   /**
    * TODO: Update the weights of each particle using a mult-variate Gaussian
@@ -107,19 +103,18 @@ void ParticleFilter::UpdateWeights(double sensor_range, double std_landmark[], v
    *   and the following is a good resource for the actual equation to implement
    *   (look at equation 3.33) http://planning.cs.uiuc.edu/node99.html
    */
-  std::cout << "UpdateWeights:" << std::endl;
-  double total_weight = 0;
+  double total_weight = 0.0;
   for (unsigned int i = 0; i < particles_.size(); i++) {
     auto& p = particles_[i];
-    TransformLandmarksFromLocalToGlobal(p, &observations);
+    auto obs_copy = observations;
+    TransformLandmarksFromLocalToGlobal(p, &obs_copy);
     const auto& predicted_obs_id = QueryMapLandmarks(p, sensor_range, map);
-    // std::cout << "predicted_obs_ids:" << predicted_obs_id.size() << ", total:" << map.landmarks.size() << std::endl;
-    DataAssociate(predicted_obs_id, map, &observations);
+    DataAssociate(predicted_obs_id, map, &obs_copy);
     double weight = 1.0;
     std::vector<int> p_associations;
     std::vector<double> obs_x;
     std::vector<double> obs_y;
-    for (const auto& obs : observations) {
+    for (const auto& obs : obs_copy) {
       const auto& map_lm = map.landmarks[obs.id];
       const auto& w = MultivariableProb(std_landmark[0], std_landmark[1], obs.x, obs.y, map_lm.x, map_lm.y);
       weight *= w;
@@ -129,16 +124,12 @@ void ParticleFilter::UpdateWeights(double sensor_range, double std_landmark[], v
     }
     SetAssociations(p, p_associations, obs_x, obs_y);
     p.weight = weight;
-    std::cout << "(1)p.w:" << p.weight << std::endl;
     total_weight += p.weight;
   }
-  std::cout << "totoal_weights:" << total_weight << std::endl;
   latest_max_weight_ = 0.0;
   for (unsigned int i = 0; i < particles_.size(); i++) {
     auto& p = particles_[i];
-    std::cout << "(2)p.w:" << p.weight << std::endl;
-    p.weight = p.weight / total_weight;
-    std::cout << "final w:" << p.weight << std::endl;
+    p.weight = p.weight / (total_weight);
     if (p.weight > latest_max_weight_) {
       latest_max_weight_ = p.weight;
     }
@@ -154,7 +145,6 @@ void ParticleFilter::Resample() {
    */
   std::vector<Particle> sampled_particles;
   double r = Random(0.0, 1.0);
-  std::cout << "r:" << r << std::endl;
   int index = static_cast<int>(r * static_cast<double>(num_particles_));
   double beta = 0.0;
   for (unsigned int i = 0; i < num_particles_; i++) {
@@ -166,11 +156,6 @@ void ParticleFilter::Resample() {
     sampled_particles.push_back(particles_[index]);
   }
   particles_ = sampled_particles;
-  static int update_count = 0;
-  update_count++;
-  if (update_count >= 2) {
-    exit(1);
-  }
 }
 
 void ParticleFilter::SetAssociations(Particle& particle, const vector<int>& associations, const vector<double>& sense_x,

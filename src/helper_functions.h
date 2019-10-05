@@ -120,11 +120,8 @@ inline bool ReadMapData(std::string filename, Map& map) {
     single_landmark_temp.id = id_i;
     single_landmark_temp.x = landmark_x_f;
     single_landmark_temp.y = landmark_y_f;
-    std::cout << "map lm:"
-              << "(" << landmark_x_f << "," << landmark_y_f << ")" << std::endl;
     map.landmarks[single_landmark_temp.id] = single_landmark_temp;
   }
-  std::cout << "map lm size:" << map.landmarks.size() << std::endl;
   return true;
 }
 
@@ -270,26 +267,36 @@ static std::vector<double> GaussianSample(std::vector<double> mean, std::vector<
   }
   return sampled;
 }
+
+static double NormalizeAngle(const double& phi) { return std::atan2(std::sin(phi), std::cos(phi)); }
+
 static std::vector<double> BicyclePredict(std::vector<double> state0, double delta_t, double velocity,
                                           double yaw_rate) {
   double x0 = state0[0];
   double y0 = state0[1];
   double theta0 = state0[2];
+  if (yaw_rate != 0.0) {
+    double x1 = x0 + (velocity / yaw_rate) * (std::sin(theta0 + yaw_rate * delta_t) - std::sin(theta0));
+    double y1 = y0 + (velocity / yaw_rate) * (std::cos(theta0) - std::cos(theta0 + yaw_rate * delta_t));
+    double theta1 = theta0 + yaw_rate * delta_t;
 
-  double x1 = x0 + (velocity / yaw_rate) * (std::sin(theta0 + yaw_rate * delta_t) - std::sin(theta0));
-  double y1 = y0 + (velocity / yaw_rate) * (std::cos(theta0) - std::cos(theta0 + yaw_rate * delta_t));
-  double theta1 = theta0 + yaw_rate * delta_t;
-  return {x1, y1, theta0};
+    return {x1, y1, theta1};
+  } else {
+    double x1 = x0 + velocity * delta_t * std::sin(theta0);
+    double y1 = y0 + velocity * delta_t * std::cos(theta0);
+    double theta1 = theta0;
+
+    return {x1, y1, theta1};
+  }
 }
 
 static void TransformLandmarksFromLocalToGlobal(const Particle& global_pose, std::vector<Landmark>* local_obs) {
   for (auto& obs : *local_obs) {
-    // std::cout << "local obs:(" << obs.x << "," << obs.y << ")" << std::endl;
-    double x = global_pose.x + std::cos(global_pose.theta) * obs.x - std::sin(global_pose.theta) * obs.y;
-    double y = global_pose.y + std::sin(global_pose.theta) * obs.x + std::cos(global_pose.theta) * obs.y;
+    double theta = global_pose.theta;
+    double x = global_pose.x + std::cos(theta) * obs.x - std::sin(theta) * obs.y;
+    double y = global_pose.y + std::sin(theta) * obs.x + std::cos(theta) * obs.y;
     obs.x = x;
     obs.y = y;
-    // std::cout << "global obs:(" << obs.x << "," << obs.y << ")" << std::endl;
   }
 }
 
@@ -304,12 +311,8 @@ static double EuclideanDistance(const std::vector<double>& p1, const std::vector
 
 static std::vector<int> QueryMapLandmarks(const Particle& center, double radius, const Map& map) {
   std::vector<int> result;
-  std::cout << "center:(" << center.x << "," << center.y << ")"
-            << " radius:" << radius << std::endl;
   for (const auto& map_lm : map.landmarks) {
     if (EuclideanDistance({map_lm.second.x, map_lm.second.y}, {center.x, center.y}) < radius) {
-      // std::cout << "target map lm:" << map_lm.first << "(" << map_lm.second.x << "," << map_lm.second.y << ")"
-      //           << std::endl;
       result.push_back(map_lm.first);
     }
   }
@@ -326,6 +329,22 @@ static double MultivariableProb(double sig_x, double sig_y, double x_obs, double
   double weight = gauss_norm * exp(-exponent);
 
   return weight;
+}
+
+// template <class T>
+static std::ostream& operator<<(std::ostream& out, std::vector<double>& vec) {
+  out << "[";
+  bool first = true;
+  for (const auto& v : vec) {
+    if (first) {
+      out << v;
+      first = false;
+    } else {
+      out << "," << v;
+    }
+  }
+  out << "]";
+  return out;
 }
 
 #endif  // HELPER_FUNCTIONS_H_
