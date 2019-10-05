@@ -12,6 +12,7 @@
 #include <math.h>
 #include <cassert>
 #include <fstream>
+#include <iostream>
 #include <memory>
 #include <random>
 #include <sstream>
@@ -119,9 +120,11 @@ inline bool ReadMapData(std::string filename, Map& map) {
     single_landmark_temp.id = id_i;
     single_landmark_temp.x = landmark_x_f;
     single_landmark_temp.y = landmark_y_f;
-
+    std::cout << "map lm:"
+              << "(" << landmark_x_f << "," << landmark_y_f << ")" << std::endl;
     map.landmarks[single_landmark_temp.id] = single_landmark_temp;
   }
+  std::cout << "map lm size:" << map.landmarks.size() << std::endl;
   return true;
 }
 
@@ -247,30 +250,23 @@ inline bool ReadLandmarkData(std::string filename, std::vector<Landmark>& observ
   return true;
 }
 
-static std::shared_ptr<std::mt19937> G_random_engine = nullptr;
-static std::shared_ptr<std::default_random_engine> G_random_engine_gaussian = nullptr;
-static void InitRandomEngine() {
-  assert(G_random_engine == nullptr);
-  assert(G_random_engine_gaussian == nullptr);
-  G_random_engine = std::make_shared<std::mt19937>(1024);
-  G_random_engine_gaussian = std::make_shared<std::default_random_engine>(1024);
-}
+static std::mt19937 G_random_engine{1024};
 
 static double Random(double start, double end) {
   std::uniform_real_distribution<double> dist(start, end);
-  return dist(*G_random_engine);
+  return dist(G_random_engine);
 }
 
 static std::vector<double> GaussianSample(std::vector<double> mean, std::vector<double> std) {
   assert(mean.size() == std.size());
   std::vector<std::normal_distribution<double>> dists;
   for (unsigned int i = 0; i < mean.size(); i++) {
-    dists.push_back(std::normal_distribution<double>{mean[i], std[i]});
+    dists.push_back(std::normal_distribution<double>(mean[i], std[i]));
   }
   std::vector<double> sampled;
   sampled.resize(dists.size());
   for (unsigned int i = 0; i < dists.size(); i++) {
-    sampled[i] = dists[i](*G_random_engine_gaussian);
+    sampled[i] = dists[i](G_random_engine);
   }
   return sampled;
 }
@@ -288,15 +284,17 @@ static std::vector<double> BicyclePredict(std::vector<double> state0, double del
 
 static void TransformLandmarksFromLocalToGlobal(const Particle& global_pose, std::vector<Landmark>* local_obs) {
   for (auto& obs : *local_obs) {
+    // std::cout << "local obs:(" << obs.x << "," << obs.y << ")" << std::endl;
     double x = global_pose.x + std::cos(global_pose.theta) * obs.x - std::sin(global_pose.theta) * obs.y;
     double y = global_pose.y + std::sin(global_pose.theta) * obs.x + std::cos(global_pose.theta) * obs.y;
     obs.x = x;
     obs.y = y;
+    // std::cout << "global obs:(" << obs.x << "," << obs.y << ")" << std::endl;
   }
 }
 
 static double EuclideanDistance(const std::vector<double>& p1, const std::vector<double>& p2) {
-  assert(p1.size() != p2.size());
+  assert(p1.size() == p2.size());
   double result = 0.0;
   for (unsigned int i = 0; i < p1.size(); i++) {
     result += (p1[i] - p2[i]) * (p1[i] - p2[i]);
@@ -306,8 +304,12 @@ static double EuclideanDistance(const std::vector<double>& p1, const std::vector
 
 static std::vector<int> QueryMapLandmarks(const Particle& center, double radius, const Map& map) {
   std::vector<int> result;
+  std::cout << "center:(" << center.x << "," << center.y << ")"
+            << " radius:" << radius << std::endl;
   for (const auto& map_lm : map.landmarks) {
     if (EuclideanDistance({map_lm.second.x, map_lm.second.y}, {center.x, center.y}) < radius) {
+      // std::cout << "target map lm:" << map_lm.first << "(" << map_lm.second.x << "," << map_lm.second.y << ")"
+      //           << std::endl;
       result.push_back(map_lm.first);
     }
   }
@@ -316,16 +318,12 @@ static std::vector<int> QueryMapLandmarks(const Particle& center, double radius,
 
 static double MultivariableProb(double sig_x, double sig_y, double x_obs, double y_obs, double mu_x, double mu_y) {
   // calculate normalization term
-  double gauss_norm;
-  gauss_norm = 1 / (2 * M_PI * sig_x * sig_y);
-
+  double gauss_norm = 1.0 / (2.0 * M_PI * sig_x * sig_y);
   // calculate exponent
-  double exponent;
-  exponent = (pow(x_obs - mu_x, 2) / (2 * pow(sig_x, 2))) + (pow(y_obs - mu_y, 2) / (2 * pow(sig_y, 2)));
-
+  double exponent =
+      (pow(x_obs - mu_x, 2.0) / (2.0 * pow(sig_x, 2.0))) + (pow(y_obs - mu_y, 2.0) / (2.0 * pow(sig_y, 2.0)));
   // calculate weight using normalization terms and exponent
-  double weight;
-  weight = gauss_norm * exp(-exponent);
+  double weight = gauss_norm * exp(-exponent);
 
   return weight;
 }

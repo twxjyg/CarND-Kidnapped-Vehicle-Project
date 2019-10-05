@@ -46,7 +46,6 @@ int main() {
   }
 
   // Create particle filter
-  InitRandomEngine();
   ParticleFilter pf;
 
   h.onMessage([&pf, &map, &delta_t, &sensor_range, &sigma_pos, &sigma_landmark](
